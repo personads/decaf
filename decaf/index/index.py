@@ -298,8 +298,9 @@ class DecafIndex:
 			queries.append(query)
 
 		# execute queries across shards
-		for shard_export in self.query_shards(queries=queries):
-			export += shard_export
+		for shard_idx, shard_result in self.query_shards(queries=queries):
+			shard_export = shard_result[0]
+			export += shard_export if shard_export else ''
 
 		return export
 
@@ -496,7 +497,7 @@ class DecafIndex:
 
 		return structure_counts
 
-	def get_structure_ngrams(self, types, hierarchy=None, literals=False, window=1):
+	def get_structure_ngrams(self, types, hierarchy=None, literals=False, min_window=1, max_window=1):
 		structure_ngrams = {}
 
 		# gather fields to return
@@ -517,37 +518,45 @@ class DecafIndex:
 					],
 					operation='OR'
 				)
-				for _ in range(window)
 			],
-			sequential=True,
 			hierarchy=hierarchy
 		)
 
 		# construct views and query
 		views = construct_views(constraint=ngram_filter)
-		relevant_view = 'relevant_structures' if hierarchy else 'filtered_sequences'
+		relevant_view = 'relevant_substructures'
+		if literals:
+			relevant_view = 'relevant_literals'
+		if hierarchy:
+			relevant_view = 'relevant_structures'
 		query = f'{views} SELECT {", ".join(fields)} FROM {relevant_view}'
 
-		# execute query across shards
-		ngram_id, ngram = [], []
-		for shard_idx, result in self.query_shards(queries=[query]):
-			# gather result ID and values
-			result_id, values = (result[:2], result[2:]) if hierarchy else (result[:1], result[1:])
-			ngram_id.append((shard_idx, ) + result_id)
-			ngram.append(values)
-
-			# check for completed ngram
-			if len(ngram) == window:
-				ngram_id, ngram, ngram_valid = tuple(ngram_id), tuple(ngram), True
-				# check if ngram occurs within hierarchical parent structure
-				if hierarchy and (len({part_id[1] for part_id in ngram_id}) != 1):
-					ngram_valid = False
-				# add current ngram and reset
-				if ngram_valid:
-					if ngram not in structure_ngrams:
-						structure_ngrams[ngram] = set()
-					structure_ngrams[ngram].add(ngram_id)
+		# load results
+		results = list(self.query_shards(queries=[query]))
+		# construct ngrams
+		for result_idx in range(len(results)-max_window):
+			for window in range(min_window, max_window+1):
+				# construct ngram of current window size
+				ngram_results = results[result_idx:result_idx+window]
 				ngram_id, ngram = [], []
+				for ngram_result in ngram_results:
+					shard_idx, result = ngram_result
+					# gather result ID and values
+					result_id, values = (result[:2], result[2:]) if hierarchy else (result[:1], result[1:])
+					ngram_id.append((shard_idx, ) + result_id)
+					ngram.append(values)
+					# check if ngram is contained within hierarchical parent structure
+					if hierarchy and (len(ngram_id) > 1) and (ngram_id[-2][1] != ngram_id[-1][1]):
+						ngram_id = None
+						break
+				# check for valid ngram
+				if ngram_id is None:
+					break
+				# add current ngram
+				ngram_id, ngram = tuple(ngram_id), tuple(ngram)
+				if ngram not in structure_ngrams:
+					structure_ngrams[ngram] = set()
+				structure_ngrams[ngram].add(ngram_id)
 
 		return structure_ngrams
 
