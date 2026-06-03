@@ -47,11 +47,14 @@ class ConlluBatcher:
         batch = []
 
         # iterate over all sentences
-        in_boundary = False  # flag to check whether sentence falls within structural boundary
+        in_boundary = None  # flag to check whether sentence falls within structural boundary
         for sentence_idx, sentence in enumerate(parse_incr(self._file_pointer)):
             # seek ahead until offset (cannot call file.seek() because parser calls next())
             if (sentence_idx < self.start) or (sentence_idx > self.end):
                 continue
+
+            # initial check of boundary start
+            in_boundary = self.get_boundary(sentence) if in_boundary is None else in_boundary
 
             # check if batch has reached target size
             batch_complete = False
@@ -247,7 +250,7 @@ class ConlluParser(FormatParser):
                 for co_field, (co_value, co_start) in carryover.items():
                     # create separate document and document ID structures
                     if co_field == 'document':
-                        document =Structure(
+                        document = Structure(
                                 start=co_start, end=cursor_idx,
                                 value=None, stype='document',
                                 literals=[l for l in literals['document']]
@@ -314,13 +317,16 @@ class ConlluParser(FormatParser):
             if force_alignment:
                 # search for current token
                 sentence_continuation = sentence.metadata['text'][text_cursor_idx:]
-                token_pattern = '^(' + r'\s*'.join(re.escape(char) for char in token['form']) + ')(\s*)'
+                # construct matching pattern
+                token_characters = [re.escape(re.sub(r'[\x00-\x1F\x7F]', '', char)) for char in token['form']]
+                token_pattern = '^(' + r'[\x00-\x1F\x7F\s]*'.join(token_characters) + r')([\x00-\x1F\x7F\s]*)'
                 token_match = re.match(token_pattern, sentence_continuation)
                 if token_match is None:
                         raise ValueError(
                             f"[Error] Could not find token '{token}' in '{sentence_continuation}'.\n"
                             f"  * sentence: {sentence}\n"
-                            f"  * token: '{token}'"
+                            f"  * token: '{token}'\n"
+                            f"  * pattern: '{token_pattern}'"
                         )
                 # increment text cursor position to after current token
                 text_cursor_idx += len(token_match[1])
