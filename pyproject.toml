@@ -1,12 +1,12 @@
 [project]
 name = "decaffinate"
-version = "0.2"
+version = "0.2.1"
 authors = [
   { name="Max Müller-Eberstein", email="decaf@personads.me" },
 ]
 description = "A Dynamically Extensible Corpus Analysis Framework"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent"
@@ -15,6 +15,9 @@ license = "MIT"
 
 [tool.setuptools.packages.find]
 exclude = ["experiments*", "venv*"]
+
+[tool.setuptools.package-data]
+"decaf.config" = ["*.sql"]
 
 [project.optional-dependencies]
 full = [

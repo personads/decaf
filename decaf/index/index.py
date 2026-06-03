@@ -117,7 +117,8 @@ class DecafIndex:
 		self.connect(shard=shard_idx)
 		# initialize shard from default schema
 		cursor = self.connection.cursor()
-		with resources.open_text('decaf.config', 'schema.sql') as fp:
+		schema_resource = resources.files('decaf.config').joinpath('schema.sql')
+		with schema_resource.open('r') as fp:
 			schema = fp.read()
 		cursor.executescript(schema)
 		self.commit()
